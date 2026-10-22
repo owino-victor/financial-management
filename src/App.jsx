@@ -24,8 +24,8 @@ const initialData = {
     { dayName: "Sat", paid: 0 },
     { dayName: "Sun", paid: 0 },
   ],
-  deposits: [], // Array of { id, amount, date }
-  deductions: [], // Array of { id, amount, description, date }
+  deposits: [],
+  deductions: [],
   debtors: [
     { id: "1", name: "Sample Debtor", originalAmount: 5000, paidAmount: 0 },
   ],
@@ -40,15 +40,13 @@ export default function App() {
   const [isAdmin, setIsAdmin] = useState(false);
   const [showPinModal, setShowPinModal] = useState(false);
 
-  // Save to localStorage whenever data changes
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
   }, [data]);
 
-  // Calculate Sat - Fri Weekly Contribution Total
   const calculateSatFriTotal = () => {
     const now = new Date();
-    const day = now.getDay(); // 0 is Sun, 6 is Sat
+    const day = now.getDay();
     const diffToSat = day === 6 ? 0 : day + 1;
 
     const lastSat = new Date(now);
@@ -60,15 +58,13 @@ export default function App() {
       .reduce((acc, curr) => acc + curr.amount, 0);
   };
 
-  // Handlers
   const handleAddTodayPayment = (amount) => {
     const newDeposit = {
-      id: Date.now().toString(),
+      id: String(Date.now()),
       amount,
       date: new Date().toISOString(),
     };
 
-    // Update current day in weekDaysData based on day index (Mon=0 to Sun=6)
     const jsDay = new Date().getDay();
     const dayIndex = jsDay === 0 ? 6 : jsDay - 1;
 
@@ -89,7 +85,6 @@ export default function App() {
     }));
   };
 
-  // Handler for clicking & editing any specific day in the Weekly Commitment Strip
   const handleUpdateDayAmount = (dayIdx, newAmount) => {
     const updatedWeekDays = [
       ...(data.weekDaysData || initialData.weekDaysData),
@@ -104,11 +99,10 @@ export default function App() {
       paid: newAmount,
     };
 
-    // Log deposit if amount increased
     const newDeposit =
       diff > 0
         ? {
-            id: Date.now().toString(),
+            id: String(Date.now()),
             amount: diff,
             date: new Date().toISOString(),
           }
@@ -119,7 +113,6 @@ export default function App() {
       return {
         ...prev,
         mainBalance: newMain,
-        // If main balance drops below RH pool, cap RH pool to match
         rhBalance: Math.min(newMain, prev.rhBalance),
         weekDaysData: updatedWeekDays,
         deposits: newDeposit ? [...prev.deposits, newDeposit] : prev.deposits,
@@ -182,13 +175,11 @@ export default function App() {
   const handlePayDebtor = (debtorId, amount) => {
     if (amount <= 0) return;
 
-    // Find the debtor being paid
     const targetDebtor = data.debtors.find((d) => d.id === debtorId);
     if (!targetDebtor) return;
 
     const remainingDebt = targetDebtor.originalAmount - targetDebtor.paidAmount;
 
-    // 1. Prevent paying more than remaining debt balance
     if (amount > remainingDebt) {
       alert(
         `Cannot pay ${amount.toLocaleString()} KES. The remaining debt balance for ${targetDebtor.name} is only ${remainingDebt.toLocaleString()} KES.`,
@@ -196,7 +187,6 @@ export default function App() {
       return;
     }
 
-    // 2. Prevent paying more than current Main Balance
     if (data.mainBalance < amount) {
       alert(
         `Insufficient funds in Main Balance (${data.mainBalance.toLocaleString()} KES) to pay ${amount.toLocaleString()} KES.`,
@@ -209,7 +199,6 @@ export default function App() {
       return {
         ...prev,
         mainBalance: newMain,
-        // Scale down RH pool if deduction eats into allocated RH subset
         rhBalance: Math.max(0, Math.min(newMain, prev.rhBalance - amount)),
         debtors: prev.debtors.map((d) => {
           if (d.id === debtorId) {
@@ -231,15 +220,43 @@ export default function App() {
   };
 
   const handleAddDebtor = (name, originalAmount) => {
-    const newDebtor = {
-      id: Date.now().toString(),
-      name,
-      originalAmount,
-      paidAmount: 0,
-    };
+    const trimmedName = name.trim();
+    const existing = data.debtors.find(
+      (d) => d.name.toLowerCase() === trimmedName.toLowerCase(),
+    );
+
+    if (existing) {
+      handleTopUpDebtor(existing.id, originalAmount);
+    } else {
+      const newDebtor = {
+        id: String(Date.now()),
+        name: trimmedName,
+        originalAmount,
+        paidAmount: 0,
+      };
+      setData((prev) => ({
+        ...prev,
+        debtors: [...prev.debtors, newDebtor],
+      }));
+    }
+  };
+
+  const handleTopUpDebtor = (debtorId, additionalAmount) => {
     setData((prev) => ({
       ...prev,
-      debtors: [...prev.debtors, newDebtor],
+      debtors: prev.debtors.map((d) => {
+        if (d.id === debtorId) {
+          return {
+            ...d,
+            originalAmount: d.originalAmount + additionalAmount,
+            clearedAt:
+              d.paidAmount >= d.originalAmount + additionalAmount
+                ? d.clearedAt
+                : null,
+          };
+        }
+        return d;
+      }),
     }));
   };
 
@@ -252,7 +269,7 @@ export default function App() {
       return;
     }
     const newDeduction = {
-      id: Date.now().toString(),
+      id: String(Date.now()),
       amount,
       description,
       date: new Date().toISOString(),
@@ -262,7 +279,6 @@ export default function App() {
       return {
         ...prev,
         mainBalance: newMain,
-        // Scale down RH pool if deduction eats into allocated RH subset
         rhBalance: Math.max(0, Math.min(newMain, prev.rhBalance - amount)),
         deductions: [newDeduction, ...prev.deductions],
       };
@@ -296,7 +312,6 @@ export default function App() {
           onPayHealth={handlePayHealth}
         />
 
-        {/* Weekly Status Bar with Clickable Past-Day Editing */}
         <WeeklyTrackerBar
           weekDaysData={data.weekDaysData || []}
           target={1000}
@@ -309,6 +324,7 @@ export default function App() {
           isAdmin={isAdmin}
           onPayDebtor={handlePayDebtor}
           onAddDebtor={handleAddDebtor}
+          onTopUpDebtor={handleTopUpDebtor}
         />
 
         <Deductions

@@ -1,189 +1,272 @@
 import { useState } from "react";
-import { UserPlus, Check } from "lucide-react";
-import { formatKES, sortDebtors } from "../utils/helpers";
+import { UserPlus, PlusCircle, CheckCircle2, AlertCircle } from "lucide-react";
+import { formatKES } from "../utils/helpers";
 
 export default function DebtorLedger({
   debtors,
   isAdmin,
   onPayDebtor,
   onAddDebtor,
+  onTopUpDebtor,
 }) {
   const [showAddModal, setShowAddModal] = useState(false);
+  const [showTopUpModal, setShowTopUpModal] = useState(null); // stores debtor object
   const [name, setName] = useState("");
   const [amount, setAmount] = useState("");
-  const [payInputs, setPayInputs] = useState({});
+  const [payAmounts, setPayAmounts] = useState({});
 
-  const sortedList = sortDebtors(debtors);
+  // Sort debtors live: uncleared first (lowest remaining balance first), then cleared
+  const sortedDebtors = [...debtors].sort((a, b) => {
+    const remA = a.originalAmount - a.paidAmount;
+    const remB = b.originalAmount - b.paidAmount;
+    const isClearedA = remA <= 0;
+    const isClearedB = remB <= 0;
+
+    if (isClearedA !== isClearedB) return isClearedA ? 1 : -1;
+    return remA - remB;
+  });
 
   const handleAddSubmit = (e) => {
     e.preventDefault();
-    if (name && amount > 0) {
-      onAddDebtor(name, parseFloat(amount));
+    const val = parseFloat(amount);
+    if (name.trim() && !isNaN(val) && val > 0) {
+      onAddDebtor(name.trim(), val);
       setName("");
       setAmount("");
       setShowAddModal(false);
     }
   };
 
+  const handleTopUpSubmit = (e) => {
+    e.preventDefault();
+    const val = parseFloat(amount);
+    if (!isNaN(val) && val > 0 && showTopUpModal) {
+      onTopUpDebtor(showTopUpModal.id, val);
+      setAmount("");
+      setShowTopUpModal(null);
+    }
+  };
+
+  const handlePay = (id) => {
+    const val = parseFloat(payAmounts[id]);
+    if (!isNaN(val) && val > 0) {
+      onPayDebtor(id, val);
+      setPayAmounts((prev) => ({ ...prev, [id]: "" }));
+    }
+  };
+
   return (
-    <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 text-white shadow-xl">
-      <div className="flex justify-between items-center mb-4">
+    <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 text-white shadow-xl space-y-4">
+      <div className="flex items-center justify-between">
         <div>
-          <h3 className="text-lg font-bold">Debtor Ledger</h3>
+          <h3 className="text-sm font-bold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
+            <AlertCircle className="w-4 h-4 text-amber-400" /> Debtors Ledger
+          </h3>
           <p className="text-xs text-slate-400">
-            Ordered automatically from lowest to highest remaining balance
+            Sorted by lowest remaining balance first
           </p>
         </div>
         {isAdmin && (
           <button
+            type="button"
             onClick={() => setShowAddModal(true)}
-            className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold px-3 py-2 rounded-xl transition"
+            className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold px-3 py-1.5 rounded-xl flex items-center gap-1 transition"
           >
-            <UserPlus className="w-4 h-4" /> Add Debtor
+            <UserPlus className="w-3.5 h-3.5" /> Add Debtor
           </button>
         )}
       </div>
 
       <div className="space-y-3">
-        {sortedList.map((debtor) => {
-          const remaining = Math.max(
-            0,
-            debtor.originalAmount - debtor.paidAmount,
-          );
-          const isCleared = remaining === 0;
+        {sortedDebtors.length === 0 ? (
+          <p className="text-xs text-slate-500 text-center py-4">
+            No debt records found.
+          </p>
+        ) : (
+          sortedDebtors.map((d) => {
+            const remaining = Math.max(0, d.originalAmount - d.paidAmount);
+            const isCleared = remaining === 0;
 
-          // Check if cleared within 24h for Green state vs Grey state
-          const clearedRecently =
-            isCleared &&
-            debtor.clearedAt &&
-            new Date() - new Date(debtor.clearedAt) < 86400000;
-          const percentage = Math.min(
-            100,
-            Math.round((debtor.paidAmount / debtor.originalAmount) * 100),
-          );
-
-          return (
-            <div
-              key={debtor.id}
-              className={`relative overflow-hidden border rounded-xl p-4 transition-all ${
-                isCleared
-                  ? clearedRecently
-                    ? "bg-emerald-950/30 border-emerald-500/40 opacity-90"
-                    : "bg-slate-900/50 border-slate-800 opacity-50 line-through"
-                  : "bg-slate-800/80 border-slate-700"
-              }`}
-            >
-              {/* Dynamic Fill Bar */}
+            return (
               <div
-                className={`absolute top-0 left-0 bottom-0 transition-all duration-500 ${
+                key={d.id}
+                className={`p-4 rounded-xl border transition-all ${
                   isCleared
-                    ? clearedRecently
-                      ? "bg-emerald-500/20"
-                      : "bg-slate-700/20"
-                    : "bg-amber-500/20"
+                    ? "bg-slate-950/40 border-slate-800/60 opacity-60"
+                    : "bg-slate-950 border-slate-800 hover:border-slate-700"
                 }`}
-                style={{ width: `${percentage}%` }}
-              />
-
-              <div className="relative z-10 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                <div>
-                  <div className="flex items-center gap-2">
-                    <h4 className="font-bold text-base">{debtor.name}</h4>
-                    {isCleared && (
-                      <span className="text-[10px] bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 px-2 py-0.5 rounded-full flex items-center gap-1">
-                        <Check className="w-3 h-3" /> Cleared
+              >
+                <div className="flex justify-between items-start mb-2">
+                  <div>
+                    <h4 className="font-bold text-sm text-slate-200 flex items-center gap-2">
+                      {d.name}
+                      {isCleared && (
+                        <span className="text-[10px] font-extrabold uppercase bg-emerald-950 text-emerald-400 border border-emerald-800/60 px-2 py-0.5 rounded-full flex items-center gap-1">
+                          <CheckCircle2 className="w-3 h-3" /> Cleared
+                        </span>
+                      )}
+                    </h4>
+                    <p className="text-xs text-slate-400">
+                      Total Owed:{" "}
+                      <span className="font-semibold text-slate-300">
+                        {formatKES(d.originalAmount)}
+                      </span>{" "}
+                      | Paid:{" "}
+                      <span className="font-semibold text-emerald-400">
+                        {formatKES(d.paidAmount)}
                       </span>
+                    </p>
+                  </div>
+
+                  <div className="text-right flex flex-col items-end gap-1">
+                    <span
+                      className={`text-sm font-bold ${isCleared ? "text-slate-500 line-through" : "text-amber-400"}`}
+                    >
+                      {formatKES(remaining)} remaining
+                    </span>
+                    {isAdmin && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowTopUpModal(d);
+                          setAmount("");
+                        }}
+                        className="text-[10px] text-slate-400 hover:text-emerald-400 flex items-center gap-1 underline transition"
+                      >
+                        <PlusCircle className="w-3 h-3" /> Add Debt
+                      </button>
                     )}
                   </div>
-                  <p className="text-xs text-slate-400 mt-0.5">
-                    Owed:{" "}
-                    <span className="text-white font-medium">
-                      {formatKES(remaining)}
-                    </span>{" "}
-                    of {formatKES(debtor.originalAmount)} ({percentage}% paid)
-                  </p>
                 </div>
 
-                {/* Admin Payment Controls */}
+                {/* Progress Bar */}
+                <div className="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden my-2">
+                  <div
+                    className="bg-emerald-500 h-full transition-all duration-500"
+                    style={{
+                      width: `${Math.min(100, (d.paidAmount / d.originalAmount) * 100)}%`,
+                    }}
+                  />
+                </div>
+
+                {/* Pay Input for Admin */}
                 {isAdmin && !isCleared && (
-                  <div className="flex items-center gap-2">
+                  <div className="flex gap-2 mt-3 pt-2 border-t border-slate-800/60">
                     <input
                       type="number"
-                      placeholder="KES"
-                      value={payInputs[debtor.id] || ""}
+                      placeholder={`Max ${remaining}`}
+                      value={payAmounts[d.id] || ""}
                       onChange={(e) =>
-                        setPayInputs({
-                          ...payInputs,
-                          [debtor.id]: e.target.value,
-                        })
+                        setPayAmounts({ ...payAmounts, [d.id]: e.target.value })
                       }
-                      className="bg-slate-950 border border-slate-700 text-xs px-2.5 py-1.5 rounded-lg text-white w-24 focus:outline-none focus:border-blue-500"
+                      className="flex-1 bg-slate-900 border border-slate-700 rounded-xl px-3 py-1.5 text-xs text-white focus:outline-none focus:border-emerald-500"
                     />
                     <button
-                      onClick={() => {
-                        const val = parseFloat(payInputs[debtor.id]);
-                        if (val > 0) {
-                          onPayDebtor(debtor.id, val);
-                          setPayInputs({ ...payInputs, [debtor.id]: "" });
-                        }
-                      }}
-                      className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold px-3 py-1.5 rounded-lg transition"
+                      type="button"
+                      onClick={() => handlePay(d.id)}
+                      className="bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs px-3.5 py-1.5 rounded-xl transition"
                     >
                       Pay
                     </button>
                   </div>
                 )}
               </div>
-            </div>
-          );
-        })}
+            );
+          })
+        )}
       </div>
 
-      {/* Add Debtor Modal */}
+      {/* Modal: New Debtor */}
       {showAddModal && (
-        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-slate-700 rounded-2xl p-6 w-full max-w-md text-white shadow-2xl">
-            <h3 className="text-lg font-bold mb-4">Add New Lender/Debtor</h3>
-            <form onSubmit={handleAddSubmit} className="space-y-4">
+        <div className="fixed inset-0 bg-black/75 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-700 rounded-2xl p-5 w-full max-w-xs text-white shadow-2xl">
+            <h3 className="text-base font-bold mb-3">Add New Debtor</h3>
+            <form onSubmit={handleAddSubmit} className="space-y-3">
               <div>
-                <label className="text-xs text-slate-400 block mb-1">
-                  Name
+                <label className="text-xs text-slate-300 block mb-1">
+                  Debtor Name
                 </label>
                 <input
                   type="text"
-                  required
-                  placeholder="e.g. Uncle John"
+                  placeholder="e.g. John"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500"
+                  className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-emerald-500"
+                  autoFocus
+                  required
                 />
               </div>
               <div>
-                <label className="text-xs text-slate-400 block mb-1">
-                  Total Amount Owed (KES)
+                <label className="text-xs text-slate-300 block mb-1">
+                  Amount Owed (KES)
                 </label>
                 <input
                   type="number"
-                  required
-                  placeholder="e.g. 15000"
+                  placeholder="e.g. 5000"
                   value={amount}
                   onChange={(e) => setAmount(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500"
+                  className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-emerald-500"
+                  required
                 />
               </div>
               <div className="flex justify-end gap-2 pt-2">
                 <button
                   type="button"
                   onClick={() => setShowAddModal(false)}
-                  className="bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs px-4 py-2 rounded-xl"
+                  className="bg-slate-800 text-slate-300 text-xs px-3.5 py-2 rounded-xl"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold px-4 py-2 rounded-xl"
+                  className="bg-emerald-600 text-white font-semibold text-xs px-4 py-2 rounded-xl"
                 >
                   Save Debtor
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Top Up Existing Debt */}
+      {showTopUpModal && (
+        <div className="fixed inset-0 bg-black/75 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-700 rounded-2xl p-5 w-full max-w-xs text-white shadow-2xl">
+            <h3 className="text-base font-bold mb-1">
+              Add Debt to {showTopUpModal.name}
+            </h3>
+            <p className="text-xs text-slate-400 mb-3">
+              Increases total amount owed for this debtor.
+            </p>
+            <form onSubmit={handleTopUpSubmit} className="space-y-3">
+              <div>
+                <label className="text-xs text-slate-300 block mb-1">
+                  Additional Amount (KES)
+                </label>
+                <input
+                  type="number"
+                  placeholder="e.g. 2000"
+                  value={amount}
+                  onChange={(e) => setAmount(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-emerald-500"
+                  autoFocus
+                  required
+                />
+              </div>
+              <div className="flex justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowTopUpModal(null)}
+                  className="bg-slate-800 text-slate-300 text-xs px-3.5 py-2 rounded-xl"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="bg-emerald-600 text-white font-semibold text-xs px-4 py-2 rounded-xl"
+                >
+                  Add to Debt
                 </button>
               </div>
             </form>
