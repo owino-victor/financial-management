@@ -8,9 +8,24 @@ import PinModal from "./components/PinModal";
 import Reports from "./components/Reports";
 import WeeklyTrackerBar from "./components/WeeklyTrackerBar";
 
-const STORAGE_KEY = "finance_tracker_data_v1";
+const STORAGE_KEY = "finance_tracker_data_v2";
+
+// JSONBin Config from Vite Environment Variables
+const BIN_ID = import.meta.env.VITE_JSONBIN_ID;
+const API_KEY = import.meta.env.VITE_JSONBIN_KEY;
+
+// Helper to get the date string of the current week's Monday (YYYY-MM-DD)
+const getCurrentMondayKey = () => {
+  const now = new Date();
+  const day = now.getDay();
+  const diffToMonday = day === 0 ? -6 : 1 - day;
+  const monday = new Date(now);
+  monday.setDate(now.getDate() + diffToMonday);
+  return monday.toISOString().split("T")[0];
+};
 
 const initialData = {
+  weekKey: getCurrentMondayKey(),
   mainBalance: 0,
   rhBalance: 0,
   rhData: { rentPaid: false, healthPaid: false },
@@ -26,8 +41,9 @@ const initialData = {
   ],
   deposits: [],
   deductions: [],
-  debtors: [], // Cleaned: No sample debtor records
+  debtors: [],
 };
+
 export default function App() {
   const [data, setData] = useState(() => {
     const saved = localStorage.getItem(STORAGE_KEY);
@@ -37,8 +53,53 @@ export default function App() {
   const [isAdmin, setIsAdmin] = useState(false);
   const [showPinModal, setShowPinModal] = useState(false);
 
+  // 1. Fetch latest data from Cloud JSONBin on initial app load
+  useEffect(() => {
+    if (!BIN_ID || !API_KEY) return;
+
+    fetch(`https://api.jsonbin.io/v3/b/${BIN_ID}/latest`, {
+      headers: {
+        "X-Master-Key": API_KEY,
+      },
+    })
+      .then((res) => res.json())
+      .then((resData) => {
+        if (resData && resData.record) {
+          const cloudData = resData.record;
+          const currentMonday = getCurrentMondayKey();
+
+          // Check weekly reset on cloud data
+          if (cloudData.weekKey !== currentMonday) {
+            cloudData.weekKey = currentMonday;
+            cloudData.todayData = { dayName: "Today", paid: 0 };
+            cloudData.weekDaysData = initialData.weekDaysData;
+          }
+
+          setData(cloudData);
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(cloudData));
+        }
+      })
+      .catch((err) => console.error("Failed to sync from cloud:", err));
+  }, []);
+
+  // 2. Save to localStorage and push to Cloud Bin whenever data changes
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+
+    if (!BIN_ID || !API_KEY) return;
+
+    const timeout = setTimeout(() => {
+      fetch(`https://api.jsonbin.io/v3/b/${BIN_ID}`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Master-Key": API_KEY,
+        },
+        body: JSON.stringify(data),
+      }).catch((err) => console.error("Failed to push to cloud:", err));
+    }, 1000);
+
+    return () => clearTimeout(timeout);
   }, [data]);
 
   const calculateSatFriTotal = () => {
@@ -257,6 +318,22 @@ export default function App() {
     }));
   };
 
+  const handleDeleteDebtor = (debtorId) => {
+    const target = data.debtors.find((d) => d.id === debtorId);
+    const debtorName = target ? target.name : "this debtor";
+
+    if (
+      window.confirm(
+        `Are you sure you want to permanently delete ${debtorName} from the ledger?`,
+      )
+    ) {
+      setData((prev) => ({
+        ...prev,
+        debtors: prev.debtors.filter((d) => d.id !== debtorId),
+      }));
+    }
+  };
+
   const handleAddDeduction = (amount, description) => {
     if (amount <= 0) return;
     if (data.mainBalance < amount) {
@@ -322,6 +399,7 @@ export default function App() {
           onPayDebtor={handlePayDebtor}
           onAddDebtor={handleAddDebtor}
           onTopUpDebtor={handleTopUpDebtor}
+          onDeleteDebtor={handleDeleteDebtor}
         />
 
         <Deductions
