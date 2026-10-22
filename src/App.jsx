@@ -68,7 +68,7 @@ export default function App() {
       date: new Date().toISOString(),
     };
 
-    // Also update current day in weekDaysData based on day index (Mon=0 to Sun=6)
+    // Update current day in weekDaysData based on day index (Mon=0 to Sun=6)
     const jsDay = new Date().getDay();
     const dayIndex = jsDay === 0 ? 6 : jsDay - 1;
 
@@ -86,6 +86,39 @@ export default function App() {
       todayData: { ...prev.todayData, paid: prev.todayData.paid + amount },
       weekDaysData: updatedWeekDays,
       deposits: [...prev.deposits, newDeposit],
+    }));
+  };
+
+  // Handler for clicking & editing any specific day in the Weekly Commitment Strip
+  const handleUpdateDayAmount = (dayIdx, newAmount) => {
+    const updatedWeekDays = [
+      ...(data.weekDaysData || initialData.weekDaysData),
+    ];
+    const oldAmount = updatedWeekDays[dayIdx]
+      ? updatedWeekDays[dayIdx].paid
+      : 0;
+    const diff = newAmount - oldAmount;
+
+    updatedWeekDays[dayIdx] = {
+      ...updatedWeekDays[dayIdx],
+      paid: newAmount,
+    };
+
+    // Log deposit if amount increased
+    const newDeposit =
+      diff > 0
+        ? {
+            id: Date.now().toString(),
+            amount: diff,
+            date: new Date().toISOString(),
+          }
+        : null;
+
+    setData((prev) => ({
+      ...prev,
+      mainBalance: Math.max(0, prev.mainBalance + diff),
+      weekDaysData: updatedWeekDays,
+      deposits: newDeposit ? [...prev.deposits, newDeposit] : prev.deposits,
     }));
   };
 
@@ -192,10 +225,12 @@ export default function App() {
           onPayHealth={handlePayHealth}
         />
 
-        {/* Weekly Status Bar */}
+        {/* Weekly Status Bar with Clickable Past-Day Editing */}
         <WeeklyTrackerBar
           weekDaysData={data.weekDaysData || []}
           target={1000}
+          isAdmin={isAdmin}
+          onUpdateDayAmount={handleUpdateDayAmount}
         />
 
         <DebtorLedger
