@@ -114,15 +114,27 @@ export default function App() {
           }
         : null;
 
-    setData((prev) => ({
-      ...prev,
-      mainBalance: Math.max(0, prev.mainBalance + diff),
-      weekDaysData: updatedWeekDays,
-      deposits: newDeposit ? [...prev.deposits, newDeposit] : prev.deposits,
-    }));
+    setData((prev) => {
+      const newMain = Math.max(0, prev.mainBalance + diff);
+      return {
+        ...prev,
+        mainBalance: newMain,
+        // If main balance drops below RH pool, cap RH pool to match
+        rhBalance: Math.min(newMain, prev.rhBalance),
+        weekDaysData: updatedWeekDays,
+        deposits: newDeposit ? [...prev.deposits, newDeposit] : prev.deposits,
+      };
+    });
   };
 
   const handleAllocateRH = (amount) => {
+    if (amount <= 0) return;
+    if (data.mainBalance < amount) {
+      alert(
+        `Cannot allocate ${amount.toLocaleString()} KES. Available Main Balance is ${data.mainBalance.toLocaleString()} KES.`,
+      );
+      return;
+    }
     setData((prev) => ({
       ...prev,
       rhBalance: prev.rhBalance + amount,
@@ -131,44 +143,91 @@ export default function App() {
 
   const handlePayRent = () => {
     const RENT = 8000;
-    setData((prev) => ({
-      ...prev,
-      mainBalance: Math.max(0, prev.mainBalance - RENT),
-      rhBalance: Math.max(0, prev.rhBalance - RENT),
-      rhData: { ...prev.rhData, rentPaid: true },
-    }));
+    if (data.mainBalance < RENT) {
+      alert(
+        `Insufficient funds in Main Balance (${data.mainBalance.toLocaleString()} KES) to pay Rent (${RENT.toLocaleString()} KES).`,
+      );
+      return;
+    }
+    setData((prev) => {
+      const newMain = prev.mainBalance - RENT;
+      return {
+        ...prev,
+        mainBalance: newMain,
+        rhBalance: Math.max(0, Math.min(newMain, prev.rhBalance - RENT)),
+        rhData: { ...prev.rhData, rentPaid: true },
+      };
+    });
   };
 
   const handlePayHealth = () => {
     const HEALTH = 1050;
-    setData((prev) => ({
-      ...prev,
-      mainBalance: Math.max(0, prev.mainBalance - HEALTH),
-      rhBalance: Math.max(0, prev.rhBalance - HEALTH),
-      rhData: { ...prev.rhData, healthPaid: true },
-    }));
+    if (data.mainBalance < HEALTH) {
+      alert(
+        `Insufficient funds in Main Balance (${data.mainBalance.toLocaleString()} KES) to pay Health (${HEALTH.toLocaleString()} KES).`,
+      );
+      return;
+    }
+    setData((prev) => {
+      const newMain = prev.mainBalance - HEALTH;
+      return {
+        ...prev,
+        mainBalance: newMain,
+        rhBalance: Math.max(0, Math.min(newMain, prev.rhBalance - HEALTH)),
+        rhData: { ...prev.rhData, healthPaid: true },
+      };
+    });
   };
 
   const handlePayDebtor = (debtorId, amount) => {
-    setData((prev) => ({
-      ...prev,
-      mainBalance: Math.max(0, prev.mainBalance - amount),
-      debtors: prev.debtors.map((d) => {
-        if (d.id === debtorId) {
-          const newPaid = d.paidAmount + amount;
-          const isCleared = newPaid >= d.originalAmount;
-          return {
-            ...d,
-            paidAmount: newPaid,
-            clearedAt:
-              isCleared && !d.clearedAt
-                ? new Date().toISOString()
-                : d.clearedAt,
-          };
-        }
-        return d;
-      }),
-    }));
+    if (amount <= 0) return;
+
+    // Find the debtor being paid
+    const targetDebtor = data.debtors.find((d) => d.id === debtorId);
+    if (!targetDebtor) return;
+
+    const remainingDebt = targetDebtor.originalAmount - targetDebtor.paidAmount;
+
+    // 1. Prevent paying more than remaining debt balance
+    if (amount > remainingDebt) {
+      alert(
+        `Cannot pay ${amount.toLocaleString()} KES. The remaining debt balance for ${targetDebtor.name} is only ${remainingDebt.toLocaleString()} KES.`,
+      );
+      return;
+    }
+
+    // 2. Prevent paying more than current Main Balance
+    if (data.mainBalance < amount) {
+      alert(
+        `Insufficient funds in Main Balance (${data.mainBalance.toLocaleString()} KES) to pay ${amount.toLocaleString()} KES.`,
+      );
+      return;
+    }
+
+    setData((prev) => {
+      const newMain = prev.mainBalance - amount;
+      return {
+        ...prev,
+        mainBalance: newMain,
+        // Scale down RH pool if deduction eats into allocated RH subset
+        rhBalance: Math.max(0, Math.min(newMain, prev.rhBalance - amount)),
+        debtors: prev.debtors.map((d) => {
+          if (d.id === debtorId) {
+            const newPaid = d.paidAmount + amount;
+            const isCleared = newPaid >= d.originalAmount;
+            return {
+              ...d,
+              paidAmount: newPaid,
+              clearedAt:
+                isCleared && !d.clearedAt
+                  ? new Date().toISOString()
+                  : d.clearedAt,
+            };
+          }
+          return d;
+        }),
+      };
+    });
   };
 
   const handleAddDebtor = (name, originalAmount) => {
@@ -185,17 +244,29 @@ export default function App() {
   };
 
   const handleAddDeduction = (amount, description) => {
+    if (amount <= 0) return;
+    if (data.mainBalance < amount) {
+      alert(
+        `Insufficient funds in Main Balance (${data.mainBalance.toLocaleString()} KES) for this deduction (${amount.toLocaleString()} KES).`,
+      );
+      return;
+    }
     const newDeduction = {
       id: Date.now().toString(),
       amount,
       description,
       date: new Date().toISOString(),
     };
-    setData((prev) => ({
-      ...prev,
-      mainBalance: Math.max(0, prev.mainBalance - amount),
-      deductions: [newDeduction, ...prev.deductions],
-    }));
+    setData((prev) => {
+      const newMain = prev.mainBalance - amount;
+      return {
+        ...prev,
+        mainBalance: newMain,
+        // Scale down RH pool if deduction eats into allocated RH subset
+        rhBalance: Math.max(0, Math.min(newMain, prev.rhBalance - amount)),
+        deductions: [newDeduction, ...prev.deductions],
+      };
+    });
   };
 
   return (
