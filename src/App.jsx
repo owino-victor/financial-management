@@ -6,6 +6,7 @@ import DebtorLedger from "./components/DebtorLedger";
 import Deductions from "./components/Deductions";
 import PinModal from "./components/PinModal";
 import Reports from "./components/Reports";
+import WeeklyTrackerBar from "./components/WeeklyTrackerBar";
 
 const STORAGE_KEY = "finance_tracker_data_v1";
 
@@ -14,6 +15,15 @@ const initialData = {
   rhBalance: 0,
   rhData: { rentPaid: false, healthPaid: false },
   todayData: { dayName: "Today", paid: 0 },
+  weekDaysData: [
+    { dayName: "Mon", paid: 0 },
+    { dayName: "Tue", paid: 0 },
+    { dayName: "Wed", paid: 0 },
+    { dayName: "Thu", paid: 0 },
+    { dayName: "Fri", paid: 0 },
+    { dayName: "Sat", paid: 0 },
+    { dayName: "Sun", paid: 0 },
+  ],
   deposits: [], // Array of { id, amount, date }
   deductions: [], // Array of { id, amount, description, date }
   debtors: [
@@ -57,10 +67,24 @@ export default function App() {
       amount,
       date: new Date().toISOString(),
     };
+
+    // Also update current day in weekDaysData based on day index (Mon=0 to Sun=6)
+    const jsDay = new Date().getDay();
+    const dayIndex = jsDay === 0 ? 6 : jsDay - 1;
+
+    const updatedWeekDays = [
+      ...(data.weekDaysData || initialData.weekDaysData),
+    ];
+    updatedWeekDays[dayIndex] = {
+      ...updatedWeekDays[dayIndex],
+      paid: updatedWeekDays[dayIndex].paid + amount,
+    };
+
     setData((prev) => ({
       ...prev,
       mainBalance: prev.mainBalance + amount,
       todayData: { ...prev.todayData, paid: prev.todayData.paid + amount },
+      weekDaysData: updatedWeekDays,
       deposits: [...prev.deposits, newDeposit],
     }));
   };
@@ -166,6 +190,12 @@ export default function App() {
           onAllocateRH={handleAllocateRH}
           onPayRent={handlePayRent}
           onPayHealth={handlePayHealth}
+        />
+
+        {/* Weekly Status Bar */}
+        <WeeklyTrackerBar
+          weekDaysData={data.weekDaysData || []}
+          target={1000}
         />
 
         <DebtorLedger
