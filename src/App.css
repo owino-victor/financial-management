@@ -1,5 +1,15 @@
 @import "tailwindcss";
 
+/* Fix mobile overscroll white backdrop */
+html,
+body {
+  background-color: #020617; /* Matches bg-slate-950 */
+  color: #f8fafc;
+  margin: 0;
+  padding: 0;
+  overscroll-behavior-y: none; /* Prevents the elastic bounce showing white space */
+}
+
 .counter {
   font-size: 16px;
   padding: 5px 10px;

@@ -26,11 +26,8 @@ const initialData = {
   ],
   deposits: [],
   deductions: [],
-  debtors: [
-    { id: "1", name: "Sample Debtor", originalAmount: 5000, paidAmount: 0 },
-  ],
+  debtors: [], // Cleaned: No sample debtor records
 };
-
 export default function App() {
   const [data, setData] = useState(() => {
     const saved = localStorage.getItem(STORAGE_KEY);
